@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
       - name: mypythondockerrepo
-        image: rajcosivadevops/indianncpldemo:latest
+        image: kavitharc/pythondevopsapp:latest
         ports:
         - containerPort: 5000
 ---
