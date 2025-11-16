@@ -6,8 +6,8 @@ pool:
   vmImage: 'ubuntu-latest'
 
 variables:
-  dockerhubUsername: 'kavitharc'  # Replace with your Docker Hub username
-  imageName: 'yamlpythonapp'                    # Replace with your image name
+  dockerhubUsername: 'kavitharc'  
+  imageName: 'yamlpythonapp'                    
   tag: '$(Build.BuildId)'
 
 steps:
@@ -16,7 +16,7 @@ steps:
 - task: Docker@2
   displayName: 'Login to Docker Hub'
   inputs:
-    containerRegistry: 'docker-connection'  # Docker Hub service connection name
+    containerRegistry: 'docker-connection'  
     command: 'login'
 
 # Step 2: Build Docker image
