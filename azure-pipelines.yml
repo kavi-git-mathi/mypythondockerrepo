@@ -1,33 +1,48 @@
+# azure-pipelines.yml
+trigger:
+- main
 
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: my-python-deployment
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: python-app
-  template:
-    metadata:
-      labels:
-        app: python-app
-    spec:
-      containers:
-      - name: mypythondockerrepo
-        image: kavitharc/pythonyamlpipeline:latest
-        ports:
-        - containerPort: 5000
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: python-app-svc
-spec:
-  selector:
-    app: python-app
-  ports:
-    - protocol: TCP
-      port: 5000
-      targetPort: 5000
-  type: LoadBalancer
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  dockerhubUsername: 'kavitharc'  # Replace with your Docker Hub username
+  imageName: 'yamlpythonapp'                    # Replace with your image name
+  tag: '$(Build.BuildId)'
+
+steps:
+
+# Step 1: Login to Docker Hub
+- task: Docker@2
+  displayName: 'Login to Docker Hub'
+  inputs:
+    containerRegistry: 'docker-connection'  # Docker Hub service connection name
+    command: 'login'
+
+# Step 2: Build Docker image
+- task: Docker@2
+  displayName: 'Build Docker image'
+  inputs:
+    command: 'build'
+    Dockerfile: '**/Dockerfile'
+    tags: |
+      $(dockerhubUsername)/$(imageName):$(tag)
+      $(dockerhubUsername)/$(imageName):latest
+    arguments: '--pull'
+
+# Step 3: Push Docker image to Docker Hub
+- task: Docker@2
+  displayName: 'Push to Docker Hub'
+  inputs:
+    command: 'push'
+    tags: |
+      $(dockerhubUsername)/$(imageName):$(tag)
+      $(dockerhubUsername)/$(imageName):latest
+
+# Step 4: Publish Kubernetes manifests
+- task: PublishBuildArtifacts@1
+  displayName: 'Publish K8s Manifests'
+  inputs:
+    PathtoPublish: 'manifests/'
+    ArtifactName: 'manifests'
+    publishLocation: 'Container'
