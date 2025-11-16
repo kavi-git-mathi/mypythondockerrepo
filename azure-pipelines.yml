@@ -1,5 +1,4 @@
-
-# ci-pipeline.yml - For Microsoft-hosted agents
+# azure-pipelines.yml - Complete CI/CD
 trigger:
 - main
 
@@ -7,34 +6,28 @@ pool:
   vmImage: 'ubuntu-latest'
 
 variables:
-  dockerhubUsername: 'kavitharc'  # Replace with your actual username
-  imageName: 'yamlpythonapp'                    # Replace with your app name
+  dockerhubUsername: 'kavitharc'
+  imageName: 'yamlpythonapp'
   tag: '$(Build.BuildId)'
+  aksName: 'myAKSCluster'
+  namespace: 'default'
 
-steps:
+stages:
 
-# Step 1: Display workspace info
-- task: Bash@3
-  displayName: 'Show Workspace Structure'
-  inputs:
-    targetType: 'inline'
-    script: |
-      echo "Current workspace: $(System.DefaultWorkingDirectory)"
-      echo "Directory contents:"
-      pwd
-      ls -la
-
-# Step 2: Create Kubernetes manifests dynamically
-- task: Bash@3
-  displayName: 'Create Kubernetes Manifests'
-  inputs:
-    targetType: 'inline'
-    script: |
-      echo "Creating manifests directory..."
-      mkdir -p $(System.DefaultWorkingDirectory)/manifests
-      
-      # Create deployment.yaml with proper image reference
-      cat > $(System.DefaultWorkingDirectory)/manifests/deployment.yaml << EOF
+# Stage 1: Build and Push
+- stage: Build
+  displayName: 'Build and Push Docker Image'
+  jobs:
+  - job: Build
+    displayName: 'Build'
+    steps:
+    - task: Bash@3
+      displayName: 'Create K8s Manifests'
+      inputs:
+        targetType: 'inline'
+        script: |
+          mkdir -p manifests
+          cat > manifests/deployment.yaml << 'EOF'
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -56,17 +49,8 @@ spec:
         image: $(dockerhubUsername)/$(imageName):latest
         ports:
         - containerPort: 80
-        resources:
-          requests:
-            memory: "64Mi"
-            cpu: "250m"
-          limits:
-            memory: "128Mi"
-            cpu: "500m"
 EOF
-
-      # Create service.yaml
-      cat > $(System.DefaultWorkingDirectory)/manifests/service.yaml << EOF
+          cat > manifests/service.yaml << 'EOF'
 apiVersion: v1
 kind: Service
 metadata:
@@ -80,55 +64,64 @@ spec:
     app: myapp
 EOF
 
-      echo "Manifests created successfully:"
-      ls -la $(System.DefaultWorkingDirectory)/manifests/
-      echo "--- Deployment.yaml content ---"
-      cat $(System.DefaultWorkingDirectory)/manifests/deployment.yaml
+    - task: Docker@2
+      displayName: 'Login to Docker Hub'
+      inputs:
+        containerRegistry: 'docker-connection'
+        command: 'login'
 
-# Step 3: Login to Docker Hub
-- task: Docker@2
-  displayName: 'Login to Docker Hub'
-  inputs:
-    containerRegistry: 'docker-connection'
-    command: 'login'
+    - task: Docker@2
+      displayName: 'Build and Push'
+      inputs:
+        command: 'buildAndPush'
+        Dockerfile: '**/Dockerfile'
+        tags: |
+          $(dockerhubUsername)/$(imageName):$(tag)
+          $(dockerhubUsername)/$(imageName):latest
 
-# Step 4: Build Docker image
-- task: Docker@2
-  displayName: 'Build Docker Image'
-  inputs:
-    command: 'build'
-    Dockerfile: '**/Dockerfile'
-    tags: |
-      $(dockerhubUsername)/$(imageName):$(tag)
-      $(dockerhubUsername)/$(imageName):latest
-    arguments: '--pull'
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish Manifests'
+      inputs:
+        targetPath: 'manifests'
+        artifact: 'manifests'
 
-# Step 5: Push Docker image to Docker Hub
-- task: Docker@2
-  displayName: 'Push to Docker Hub'
-  inputs:
-    command: 'push'
-    tags: |
-      $(dockerhubUsername)/$(imageName):$(tag)
-      $(dockerhubUsername)/$(imageName):latest
+# Stage 2: Deploy
+- stage: Deploy
+  displayName: 'Deploy to AKS'
+  dependsOn: Build
+  condition: succeeded()
+  jobs:
+  - job: Deploy
+    displayName: 'Deploy'
+    steps:
+    - task: DownloadPipelineArtifact@2
+      displayName: 'Download Manifests'
+      inputs:
+        artifact: 'manifests'
+        path: '$(System.DefaultWorkingDirectory)/manifests'
 
-# Step 6: Verify manifests before publishing
-- task: Bash@3
-  displayName: 'Verify Manifests Exist'
-  inputs:
-    targetType: 'inline'
-    script: |
-      echo "Checking manifests directory:"
-      ls -la $(System.DefaultWorkingDirectory)/manifests/
-      echo "File count:"
-      find $(System.DefaultWorkingDirectory)/manifests -name "*.yaml" | wc -l
-      echo "All files:"
-      find $(System.DefaultWorkingDirectory)/manifests -type f
+    - task: Bash@3
+      displayName: 'Update Image Tag'
+      inputs:
+        targetType: 'inline'
+        script: |
+          sed -i 's|:latest|:$(Build.BuildId)|g' $(System.DefaultWorkingDirectory)/manifests/deployment.yaml
 
-# Step 7: Publish K8s Manifests
-- task: PublishBuildArtifacts@1
-  displayName: 'Publish K8s Manifests'
-  inputs:
-    PathtoPublish: '$(System.DefaultWorkingDirectory)/manifests'
-    ArtifactName: 'manifests'
-    publishLocation: 'Container'
+    - task: Kubernetes@1
+      displayName: 'Set K8s Context'
+      inputs:
+        connectionType: 'Azure Resource Manager'
+        azureSubscription: '8253847f-5312-4919-9455-413d8ccca66c'
+        azureResourceGroup: 'NCPLindia'
+        kubernetesCluster: '$(aksName)'
+        command: 'set context'
+
+    - task: Kubernetes@1
+      displayName: 'Deploy to AKS'
+      inputs:
+        connectionType: 'Azure Resource Manager'
+        azureSubscription: '8253847f-5312-4919-9455-413d8ccca66c'
+        azureResourceGroup: 'NCPLindia'
+        kubernetesCluster: '$(aksName)'
+        command: 'apply'
+        arguments: '-f $(System.DefaultWorkingDirectory)/manifests'
