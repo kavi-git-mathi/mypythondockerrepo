@@ -27,42 +27,45 @@ stages:
         targetType: 'inline'
         script: |
           mkdir -p manifests
-          cat > manifests/deployment.yaml << 'EOF'
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: myapp-deployment
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: myapp
-  template:
-    metadata:
-      labels:
-        app: myapp
-    spec:
-      imagePullSecrets:
-      - name: dockerhub-secret
-      containers:
-      - name: myapp
-        image: $(dockerhubUsername)/$(imageName):latest
-        ports:
-        - containerPort: 80
-EOF
-          cat > manifests/service.yaml << 'EOF'
-apiVersion: v1
-kind: Service
-metadata:
-  name: myapp-service
-spec:
-  type: LoadBalancer
-  ports:
-  - port: 80
-    targetPort: 80
-  selector:
-    app: myapp
-EOF
+          
+          # Create deployment.yaml using echo commands
+          echo "apiVersion: apps/v1" > manifests/deployment.yaml
+          echo "kind: Deployment" >> manifests/deployment.yaml
+          echo "metadata:" >> manifests/deployment.yaml
+          echo "  name: myapp-deployment" >> manifests/deployment.yaml
+          echo "spec:" >> manifests/deployment.yaml
+          echo "  replicas: 2" >> manifests/deployment.yaml
+          echo "  selector:" >> manifests/deployment.yaml
+          echo "    matchLabels:" >> manifests/deployment.yaml
+          echo "      app: myapp" >> manifests/deployment.yaml
+          echo "  template:" >> manifests/deployment.yaml
+          echo "    metadata:" >> manifests/deployment.yaml
+          echo "      labels:" >> manifests/deployment.yaml
+          echo "        app: myapp" >> manifests/deployment.yaml
+          echo "    spec:" >> manifests/deployment.yaml
+          echo "      imagePullSecrets:" >> manifests/deployment.yaml
+          echo "      - name: dockerhub-secret" >> manifests/deployment.yaml
+          echo "      containers:" >> manifests/deployment.yaml
+          echo "      - name: myapp" >> manifests/deployment.yaml
+          echo "        image: $(dockerhubUsername)/$(imageName):latest" >> manifests/deployment.yaml
+          echo "        ports:" >> manifests/deployment.yaml
+          echo "        - containerPort: 80" >> manifests/deployment.yaml
+          
+          # Create service.yaml
+          echo "apiVersion: v1" > manifests/service.yaml
+          echo "kind: Service" >> manifests/service.yaml
+          echo "metadata:" >> manifests/service.yaml
+          echo "  name: myapp-service" >> manifests/service.yaml
+          echo "spec:" >> manifests/service.yaml
+          echo "  type: LoadBalancer" >> manifests/service.yaml
+          echo "  ports:" >> manifests/service.yaml
+          echo "  - port: 80" >> manifests/service.yaml
+          echo "    targetPort: 80" >> manifests/service.yaml
+          echo "  selector:" >> manifests/service.yaml
+          echo "    app: myapp" >> manifests/service.yaml
+          
+          echo "Manifests created successfully"
+          ls -la manifests/
 
     - task: Docker@2
       displayName: 'Login to Docker Hub'
@@ -106,6 +109,7 @@ EOF
         targetType: 'inline'
         script: |
           sed -i 's|:latest|:$(Build.BuildId)|g' $(System.DefaultWorkingDirectory)/manifests/deployment.yaml
+          echo "Updated deployment.yaml with tag: $(Build.BuildId)"
 
     - task: Kubernetes@1
       displayName: 'Set K8s Context'
